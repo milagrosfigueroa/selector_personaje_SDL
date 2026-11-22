@@ -1,0 +1,23 @@
+# Visual Studio
+.vs/
+
+# Carpetas de compilación
+x64/
+Debug/
+Release/
+
+# Archivos temporales
+*.obj
+*.pdb
+*.ipch
+*.ilk
+*.log
+*.tlog
+*.idb
+
+# Configuración local
+*.user
+*.suo
+
+# Ejecutables
+*.exe
