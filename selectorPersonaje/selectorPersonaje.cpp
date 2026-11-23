@@ -40,7 +40,7 @@ const char* SOUND_MOVE_PATH = "assets/sounds/move.wav";
 const char* SOUND_REMOVE_PATH = "assets/sounds/remove.wav";
 
 // EXTRA: rutas de los nuevos assets
-const char* BACKGROUND_PATH = "assets/images/background.png";
+const char* BACKGROUND_PATH = "assets/images/castillo-background.jpg";
 const char* MUSIC_PATH = "assets/sounds/music.wav";
 const char* PORTRAITS_DIR = "assets/images/portraits/";   // + nombre + ".png"
 
@@ -50,8 +50,8 @@ const int FONT_SIZE_LEGEND = 20;
 
 const int LIST_START_X = 120;
 const int LIST_START_Y = 140;
-const int LIST_ITEM_HEIGHT = 44;
-const int INDICATOR_SIZE = 28;
+const int LIST_ITEM_HEIGHT = 50;
+const int INDICATOR_SIZE = 40;
 
 // EXTRA: layout del panel derecho
 const int DETAILS_X = 780;
@@ -106,14 +106,14 @@ struct CharacterStats
 
 const CharacterStats STATS_TABLE[] =
 {
-    { "Rain",        85, 70, 90 },
-    { "Scorpion",    80, 85, 85 },
-    { "Sub-Zero",    90, 80, 70 },
-    { "Sonya",       75, 65, 95 },
-    { "Kano",        85, 80, 60 },
-    { "Goro",       100, 100, 30 },
-    { "Rayden",      95, 85, 75 },
-    { "Shang Tsung", 70, 75, 80 }
+    { "Draco Malfoy",        85, 70, 90 },
+    { "Cedric Diggory",    80, 85, 85 },
+    { "Bellatrix Lestrange",    90, 80, 70 },
+    { "Harry Potter",       75, 65, 95 },
+    { "Dobby",        85, 80, 60 },
+    { "Ron Wesley",       100, 100, 30 },
+    { "Albus Dumbledore",      95, 85, 75 },
+    { "Hermione Granger", 70, 75, 80 }
 };
 
 // Recursos graficos y de audio (se cargan una vez al iniciar).
@@ -464,7 +464,7 @@ void drawEliminated(Resources& res, const std::vector<Character>& eliminated)
         return;
     }
 
-    drawText(res.renderer, res.fontLegend, "ELIMINATED", LIST_START_X,
+    drawText(res.renderer, res.fontLegend, "SELECCIONADOS", LIST_START_X,
         ELIMINATED_LABEL_Y, COLOR_TEXT);
 
     for (int i = 0; i < static_cast<int>(eliminated.size()); ++i)
@@ -498,7 +498,7 @@ void drawEliminated(Resources& res, const std::vector<Character>& eliminated)
 void drawLegend(Resources& res)
 {
     drawText(res.renderer, res.fontLegend,
-        "UP/DOWN: select fighter    SPACE: remove    ESC: exit",
+        "UP/DOWN: find fighter    SPACE: select    ESC: exit",
         20, WINDOW_HEIGHT - 40, COLOR_TEXT);
 }
 
