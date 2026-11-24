@@ -20,6 +20,7 @@
 #include <SDL_mixer.h>
 #include <SDL_ttf.h>
 
+#include <cmath>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -34,7 +35,7 @@ const int WINDOW_HEIGHT = 720;
 const char* WINDOW_TITLE = "Character Select";
 
 const char* CHARACTERS_FILE = "characters.txt";
-const char* FONT_PATH = "assets/fonts/arial.ttf";
+const char* FONT_PATH = "assets/fonts/MagicStory-wogpP.ttf";
 const char* INDICATOR_PATH = "assets/images/indicator.png";
 const char* SOUND_MOVE_PATH = "assets/sounds/move.wav";
 const char* SOUND_REMOVE_PATH = "assets/sounds/remove.wav";
@@ -50,13 +51,13 @@ const int FONT_SIZE_LEGEND = 20;
 
 const int LIST_START_X = 120;
 const int LIST_START_Y = 140;
-const int LIST_ITEM_HEIGHT = 50;
-const int INDICATOR_SIZE = 40;
+const int LIST_ITEM_HEIGHT = 48;
+const int INDICATOR_SIZE = 36;
 
 // EXTRA: layout del panel derecho
 const int DETAILS_X = 780;
 const int PORTRAIT_Y = 100;
-const int PORTRAIT_SIZE = 360;
+const int PORTRAIT_SIZE = 360; //tamaño de los cuadrados que contienen las imagenes de los personajes
 const int DETAILS_NAME_Y = 470;
 const int STATS_START_Y = 525;
 const int STATS_ROW_HEIGHT = 35;
@@ -78,6 +79,21 @@ const int THUMBS_PER_ROW = (DETAILS_X - 40 - LIST_START_X) / THUMB_SPACING;
 const SDL_Color COLOR_BACKGROUND = { 64, 131, 200, 255 };
 const SDL_Color COLOR_TEXT = { 255, 255, 255, 255 };
 
+// EXTRA: resaltado de la lista (nombre seleccionado + barra luminosa)
+const SDL_Color COLOR_HIGHLIGHT = { 255, 220, 60, 255 };
+const int LIST_BAR_X = LIST_START_X - INDICATOR_SIZE - 20;
+const int LIST_BAR_WIDTH = 480;
+const float PULSE_SPEED = 0.006f;       // velocidad del parpadeo suave
+
+// EXTRA: eleccion de luchadores (Fighter 1 y Fighter 2)
+const int MAX_FIGHTERS = 2;
+const SDL_Color COLOR_FIGHTER_1 = { 255, 110, 110, 255 };
+const SDL_Color COLOR_FIGHTER_2 = { 110, 200, 255, 255 };
+const int FIGHTER_TAG_GAP = 20;   // separacion entre el nombre y su etiqueta
+const int FIGHTER_SLOT_X = DETAILS_X;           // recuadro arriba a la derecha
+const int FIGHTER_SLOT_Y = 16;
+const int FIGHTER_SLOT_SPACING = 38;
+
 
 // =============================================================================
 // 2. ESTRUCTURAS DE DATOS
@@ -93,6 +109,9 @@ struct Character
     int strength = 50;
     int speed = 50;
     SDL_Texture* portrait = nullptr;   // imagen a la derecha de la lista
+
+    // EXTRA: 0 = no elegido, 1 = Fighter 1, 2 = Fighter 2
+    int fighterSlot = 0;
 };
 
 // EXTRA: tabla de atributos por luchador (una fila por personaje)
@@ -139,6 +158,8 @@ struct AppState
     std::vector<Character> characters;   // lista en memoria
     std::vector<Character> eliminated;   // EXTRA: personajes removidos (se muestran abajo)
     int  selectedIndex = 0;              // posicion del indicador
+    int  fightersChosen = 0;             // EXTRA: cuantos luchadores se eligieron (0 a 2)
+    float pulse = 0.0f;                  // EXTRA: oscila entre 0 y 1 (brillo pulsante)
     bool running = true;                 // false => sale del game loop
 };
 
@@ -390,19 +411,56 @@ void drawTitle(Resources& res)
     drawText(res.renderer, res.fontTitle, "LIST OF FIGHTERS", LIST_START_X, 50, COLOR_TEXT);
 }
 
-void drawCharacterList(Resources& res, const std::vector<Character>& characters, int selectedIndex)
+// EXTRA: 'pulse' (0 a 1) hace que el brillo del seleccionado late suavemente.
+void drawCharacterList(Resources& res, const std::vector<Character>& characters,
+    int selectedIndex, float pulse)
 {
     for (int i = 0; i < static_cast<int>(characters.size()); ++i)
     {
         int y = LIST_START_Y + i * LIST_ITEM_HEIGHT;
+        bool isSelected = (i == selectedIndex);
 
-        drawText(res.renderer, res.fontItem, characters[i].name, LIST_START_X, y, COLOR_TEXT);
+        // EXTRA: barra translucida detras del nombre seleccionado.
+        if (isSelected)
+        {
+            Uint8 alpha = static_cast<Uint8>(50 + 90 * pulse);
+            SDL_Rect bar = { LIST_BAR_X, y - 2, LIST_BAR_WIDTH, LIST_ITEM_HEIGHT - 4 };
+            SDL_SetRenderDrawBlendMode(res.renderer, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(res.renderer, COLOR_HIGHLIGHT.r, COLOR_HIGHLIGHT.g,
+                COLOR_HIGHLIGHT.b, alpha);
+            SDL_RenderFillRect(res.renderer, &bar);
+        }
+
+        // EXTRA: el nombre seleccionado se dibuja en amarillo.
+        SDL_Color nameColor = isSelected ? COLOR_HIGHLIGHT : COLOR_TEXT;
+        drawText(res.renderer, res.fontItem, characters[i].name, LIST_START_X, y, nameColor);
+
+        // EXTRA: etiqueta "FIGHTER 1" / "FIGHTER 2" junto a los ya elegidos.
+        if (characters[i].fighterSlot != 0)
+        {
+            SDL_Color tagColor = (characters[i].fighterSlot == 1) ? COLOR_FIGHTER_1 : COLOR_FIGHTER_2;
+            std::string tag = "FIGHTER " + std::to_string(characters[i].fighterSlot);
+
+            // Mide cuanto ocupa el nombre para poner la etiqueta justo despues.
+            int nameWidth = 0;
+            int nameHeight = 0;
+            TTF_SizeUTF8(res.fontItem, characters[i].name.c_str(), &nameWidth, &nameHeight);
+
+            drawText(res.renderer, res.fontLegend, tag,
+                LIST_START_X + nameWidth + FIGHTER_TAG_GAP, y + 8, tagColor);
+        }
 
         // El indicador se dibuja solo junto al personaje seleccionado.
-        if (i == selectedIndex)
+        if (isSelected)
         {
-            SDL_Rect dest = { LIST_START_X - INDICATOR_SIZE - 12, y + 4,
-                              INDICATOR_SIZE, INDICATOR_SIZE };
+            // EXTRA: el cursor late: cambia de tamano y de transparencia.
+            int growth = static_cast<int>(6 * pulse);
+            int size = INDICATOR_SIZE + growth;
+            SDL_Rect dest = { LIST_START_X - INDICATOR_SIZE - 12 - growth / 2,
+                              y + 4 - growth / 2, size, size };
+
+            SDL_SetTextureBlendMode(res.indicator, SDL_BLENDMODE_BLEND);
+            SDL_SetTextureAlphaMod(res.indicator, static_cast<Uint8>(150 + 105 * pulse));
             SDL_RenderCopy(res.renderer, res.indicator, nullptr, &dest);
         }
     }
@@ -464,7 +522,7 @@ void drawEliminated(Resources& res, const std::vector<Character>& eliminated)
         return;
     }
 
-    drawText(res.renderer, res.fontLegend, "SELECCIONADOS", LIST_START_X,
+    drawText(res.renderer, res.fontLegend, "DELETED", LIST_START_X,
         ELIMINATED_LABEL_Y, COLOR_TEXT);
 
     for (int i = 0; i < static_cast<int>(eliminated.size()); ++i)
@@ -495,10 +553,34 @@ void drawEliminated(Resources& res, const std::vector<Character>& eliminated)
     }
 }
 
+// EXTRA: muestra arriba a la derecha quien es Fighter 1 y Fighter 2.
+// Los elegidos no se pueden eliminar, asi que siempre estan en 'characters'.
+void drawFighterSlots(Resources& res, const std::vector<Character>& characters)
+{
+    for (int slot = 1; slot <= MAX_FIGHTERS; ++slot)
+    {
+        std::string name = "---";   // todavia sin elegir
+
+        for (const Character& character : characters)
+        {
+            if (character.fighterSlot == slot)
+            {
+                name = character.name;
+                break;
+            }
+        }
+
+        std::string text = "FIGHTER " + std::to_string(slot) + ": " + name;
+        SDL_Color color = (slot == 1) ? COLOR_FIGHTER_1 : COLOR_FIGHTER_2;
+        drawText(res.renderer, res.fontItem, text, FIGHTER_SLOT_X,
+            FIGHTER_SLOT_Y + (slot - 1) * FIGHTER_SLOT_SPACING, color);
+    }
+}
+
 void drawLegend(Resources& res)
 {
     drawText(res.renderer, res.fontLegend,
-        "UP/DOWN: find fighter    SPACE: select    ESC: exit",
+        "UP/DOWN: select    ENTER: pick fighter    SPACE: remove    ESC: exit",
         20, WINDOW_HEIGHT - 40, COLOR_TEXT);
 }
 
@@ -509,8 +591,9 @@ void renderScreen(Resources& res, const AppState& state)
 
     // 2) Dibuja cada elemento (el orden importa: lo ultimo queda arriba).
     drawTitle(res);
-    drawCharacterList(res, state.characters, state.selectedIndex);
+    drawCharacterList(res, state.characters, state.selectedIndex, state.pulse);
     drawEliminated(res, state.eliminated);   // EXTRA
+    drawFighterSlots(res, state.characters); // EXTRA
 
     // EXTRA: el panel solo se dibuja si queda algun personaje en la lista.
     if (!state.characters.empty())
@@ -546,6 +629,17 @@ void moveSelection(AppState& state, Resources& res, int direction)
 // Elimina el personaje seleccionado (de pantalla y del vector).
 void removeSelected(AppState& state, Resources& res)
 {
+    if (state.characters.empty())
+    {
+        return;
+    }
+
+    // EXTRA: un luchador ya elegido (Fighter 1 o 2) no se puede eliminar.
+    if (state.characters[state.selectedIndex].fighterSlot != 0)
+    {
+        return;
+    }
+
     if (!removeCharacter(state.characters, state.eliminated, state.selectedIndex))
     {
         return;
@@ -559,6 +653,27 @@ void removeSelected(AppState& state, Resources& res)
     {
         state.selectedIndex = (count > 0) ? count - 1 : 0;
     }
+}
+
+// EXTRA: elige al personaje seleccionado como Fighter 1 y, despues, Fighter 2.
+// Una vez elegidos los dos, no se puede elegir a nadie mas.
+void pickFighter(AppState& state)
+{
+    if (state.characters.empty() || state.fightersChosen >= MAX_FIGHTERS)
+    {
+        return;
+    }
+
+    Character& character = state.characters[state.selectedIndex];
+
+    // No se puede elegir dos veces al mismo personaje.
+    if (character.fighterSlot != 0)
+    {
+        return;
+    }
+
+    state.fightersChosen++;
+    character.fighterSlot = state.fightersChosen;   // 1 la primera vez, 2 la segunda
 }
 
 void processInput(AppState& state, Resources& res)
@@ -577,6 +692,8 @@ void processInput(AppState& state, Resources& res)
             case SDLK_UP:     moveSelection(state, res, -1); break;
             case SDLK_DOWN:   moveSelection(state, res, +1); break;
             case SDLK_SPACE:  removeSelected(state, res);    break;
+            case SDLK_RETURN:                                      // Enter
+            case SDLK_KP_ENTER: pickFighter(state);          break; // Enter del teclado numerico
             case SDLK_ESCAPE: state.running = false;         break;
             default: break;
             }
@@ -586,8 +703,9 @@ void processInput(AppState& state, Resources& res)
 
 void update(AppState& state)
 {
-    (void)state;
-    // Espacio para logica adicional (animaciones, etc.).
+    // EXTRA: 'pulse' oscila suavemente entre 0 y 1 segun el tiempo transcurrido.
+    // Se usa para el brillo del cursor y de la barra de la lista.
+    state.pulse = (std::sin(SDL_GetTicks() * PULSE_SPEED) + 1.0f) / 2.0f;
 }
 
 
