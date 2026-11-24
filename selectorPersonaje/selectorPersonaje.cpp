@@ -392,6 +392,60 @@ void drawText(SDL_Renderer* renderer, TTF_Font* font, const std::string& text,
     }
 }
 
+// Dibuja una textura dentro de 'box' SIN deformarla.
+// cover = true : llena todo el recuadro y recorta lo que sobre
+//                (todas las fotos quedan del mismo tamano)
+// cover = false: muestra la imagen completa y pueden quedar bordes vacios
+void drawTextureFit(SDL_Renderer* renderer, SDL_Texture* texture,
+    const SDL_Rect& box, bool cover)
+{
+    int texW = 0;
+    int texH = 0;
+    SDL_QueryTexture(texture, nullptr, nullptr, &texW, &texH);
+    if (texW <= 0 || texH <= 0)
+    {
+        return;
+    }
+
+    float boxRatio = static_cast<float>(box.w) / box.h;
+    float texRatio = static_cast<float>(texW) / texH;
+
+    if (cover)
+    {
+        // Elige que parte de la imagen original se va a mostrar.
+        SDL_Rect src = { 0, 0, texW, texH };
+
+        if (texRatio > boxRatio)
+        {
+            // Imagen mas ancha que el recuadro: recorta los costados (centrado).
+            src.w = static_cast<int>(texH * boxRatio);
+            src.x = (texW - src.w) / 2;
+        }
+        else
+        {
+            // Imagen mas alta que el recuadro: recorta abajo, para conservar la cara.
+            src.h = static_cast<int>(texW / boxRatio);
+        }
+
+        SDL_RenderCopy(renderer, texture, &src, &box);
+    }
+    else
+    {
+        // Escala la imagen hasta que entre completa y la centra en el recuadro.
+        float scaleX = static_cast<float>(box.w) / texW;
+        float scaleY = static_cast<float>(box.h) / texH;
+        float scale = (scaleX < scaleY) ? scaleX : scaleY;
+
+        SDL_Rect dest;
+        dest.w = static_cast<int>(texW * scale);
+        dest.h = static_cast<int>(texH * scale);
+        dest.x = box.x + (box.w - dest.w) / 2;
+        dest.y = box.y + (box.h - dest.h) / 2;
+
+        SDL_RenderCopy(renderer, texture, nullptr, &dest);
+    }
+}
+
 // EXTRA: dibuja el fondo (imagen si existe, si no color liso).
 void drawBackground(Resources& res)
 {
@@ -498,7 +552,7 @@ void drawCharacterDetails(Resources& res, const Character& character)
 
     if (character.portrait != nullptr)
     {
-        SDL_RenderCopy(res.renderer, character.portrait, nullptr, &portraitRect);
+        drawTextureFit(res.renderer, character.portrait, portraitRect, true);
     }
     else
     {
@@ -539,7 +593,7 @@ void drawEliminated(Resources& res, const std::vector<Character>& eliminated)
         {
             // Oscurece la imagen para que se vea "fuera de combate".
             SDL_SetTextureColorMod(eliminated[i].portrait, 130, 130, 130);
-            SDL_RenderCopy(res.renderer, eliminated[i].portrait, nullptr, &dest);
+            drawTextureFit(res.renderer, eliminated[i].portrait, dest, true);
         }
         else
         {
